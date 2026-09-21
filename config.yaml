@@ -44,11 +44,15 @@ covariance:
   sparse_threshold: 20
 
 opacity:
-  # Mapped to [min, max]. Source is `neighbour_density` (mean cosine to top-k
-  # neighbours) — a data-derived "how integrated" signal that stays honest
-  # to the wte's local structure. min bumped up from 0.15 so no token disappears.
-  min: 0.35
-  max: 0.95
+  # Mapped to [min, max]. Source is `neighbour_density` (mean cosine to top-20
+  # neighbours). min stays high enough that every splat is visible, max = 1.0
+  # so tightly-embedded tokens (glitch cluster, weekdays, digits) glow at full
+  # brightness. `contrast_gamma` is applied to the [0..1] rank before the
+  # remap: values > 1 push middle tokens dimmer, so the bright cluster stands
+  # out more.
+  min: 0.30
+  max: 1.00
+  contrast_gamma: 1.6
 
 colour:
   # OKLab lightness range for base colour.

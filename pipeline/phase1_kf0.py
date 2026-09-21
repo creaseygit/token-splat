@@ -225,28 +225,29 @@ def main() -> int:
             sim[torch.arange(j - i, device=device), idx] = -2.0
             topv, topi = sim.topk(k, dim=1)
             neigh[i:j] = topi.cpu().numpy().astype(np.uint16)
-            density[i:j] = topv[:, :8].mean(dim=1).cpu().numpy()
+            # Density = mean cosine over all 20 nearest neighbours.
+            density[i:j] = topv[:, :20].mean(dim=1).cpu().numpy()
 
-    # Opacity ← density, remapped to [op_min, op_max] via 5..95 percentile.
+    # Opacity ← density, remapped to [op_min, op_max] via 5..95 percentile,
+    # then a power law so highly-connected tokens really stand out.
     lo, hi = np.percentile(density, [5, 95])
     op01 = np.clip((density - lo) / (hi - lo + 1e-8), 0.0, 1.0)
+    gamma_op = float(cfg.raw["opacity"].get("contrast_gamma", 1.0))
+    op01 = op01 ** gamma_op
     op_min = float(cfg.raw["opacity"]["min"])
     op_max = float(cfg.raw["opacity"]["max"])
     op = op_min + (op_max - op_min) * op01
     op_u8 = (op * 255).clip(0, 255).astype(np.uint8)
 
-    # Local-neighbourhood ellipsoid: PCA on each token's top-8 neighbours' 3-D
+    # Local-neighbourhood ellipsoid: PCA on each token's top-20 neighbours' 3-D
     # positions. Eigenvalues → scale (semi-axes), eigenvectors → rotation.
-    #
-    # Anisotropy strategy: normalise eigenvalues so the largest is 1, then
-    # apply a power law with `anisotropy_gamma`. gamma=1 keeps the raw ratio
-    # of eigenvalue-stds — a truly linear neighbourhood (weekdays chained
-    # PC-1-wise) shows as a needle with ~10× axis ratio, blob-like tokens
-    # stay near-spherical. Larger gamma → less contrast, smaller → more.
-    print(f"[enc] fitting local ellipsoids (k=8)…")
-    K_LOCAL = 8
-    scale_base = 0.020
-    anisotropy_gamma = 0.55
+    # With gamma=1 the axis ratio is the raw eigenvalue-std ratio — a
+    # strongly linear neighbourhood renders as an aggressive needle; a blob
+    # stays near-spherical. scale_base sets the "typical splat" visible size.
+    print(f"[enc] fitting local ellipsoids (k=20)…")
+    K_LOCAL = 20
+    scale_base = 0.030
+    anisotropy_gamma = 1.0
     for i in range(V):
         ids_nn = neigh[i, :K_LOCAL].astype(np.int64)
         pts = pos[ids_nn]                              # (K_LOCAL, 3)
@@ -310,7 +311,7 @@ def main() -> int:
         "scene_scale": scale_ref,
         "band_gains": band_gains,
         "char_class_palette": palette_json,
-        "tokens": [{"s": s, "sparse": False} for s in tokens],
+        "tokens": [{"s": s, "sparse": False, "cls": int(classes[i])} for i, s in enumerate(tokens)],
     }
 
     # 12. Write assets ------------------------------------------------------

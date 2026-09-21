@@ -1,13 +1,17 @@
 /**
- * About panel: explains the encoding + a legend of the character-class colours
- * used for base RGB. Colour swatches come from the same OKLab palette the
- * pipeline used, sent through tokens.json.
+ * About panel. Explains the encoding + a live legend of the character-class
+ * colours used for base RGB. Each legend row is a clickable toggle — click
+ * one to hide every splat in that class (they also become non-pickable).
  */
 import type { CharClass } from "../data/loader";
 
 export function mountAbout(
   host: HTMLElement,
-  meta: { topThreeVar: number; top12Var: number; top57Var: number; charClasses?: CharClass[] },
+  meta: {
+    topThreeVar: number; top12Var: number; top57Var: number;
+    charClasses?: CharClass[];
+    onToggleClass?: (disabled: Set<number>) => void;
+  },
 ): void {
   const wrap = document.createElement("details");
   wrap.id = "about";
@@ -25,15 +29,16 @@ export function mountAbout(
   const p12 = `${(meta.top12Var * 100).toFixed(1)}%`;
   const p57 = `${(meta.top57Var * 100).toFixed(1)}%`;
 
+  const disabled = new Set<number>();
+
   const paletteRows = (meta.charClasses ?? []).map((c) => {
     const hex = `rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`;
-    return `<tr>
-      <td style="padding:2px 6px 2px 0">
-        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${hex};box-shadow:0 0 0 1px rgba(255,255,255,0.15);vertical-align:middle"></span>
-      </td>
-      <td style="padding:2px 6px">${escapeHtml(c.name)}</td>
-      <td style="padding:2px 0;color:#6b7280;text-align:right">${c.count.toLocaleString()}</td>
-    </tr>`;
+    return `<button data-cls="${c.id}" title="click to toggle visibility"
+      style="all:unset;cursor:pointer;display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:3px 6px;border-radius:6px;font-family:ui-monospace,monospace;font-size:12px;width:calc(100% - 12px)">
+      <span data-swatch style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${hex};box-shadow:0 0 0 1px rgba(255,255,255,0.15)"></span>
+      <span data-name>${escapeHtml(c.name)}</span>
+      <span style="color:#6b7280">${c.count.toLocaleString()}</span>
+    </button>`;
   }).join("");
 
   wrap.innerHTML = `
@@ -46,17 +51,16 @@ export function mountAbout(
       <table style="width:100%;border-collapse:collapse;margin:8px 0">
         <tr style="color:#94a3b8"><th align="left">splat parameter</th><th align="left">signal</th></tr>
         <tr><td>position</td><td>PC 1–3 of the wte</td></tr>
-        <tr><td>ellipsoid shape + tilt</td><td>local PCA of the 8-NN neighbourhood</td></tr>
-        <tr><td>base colour</td><td>character class (see legend below)</td></tr>
-        <tr><td>view-dep. shimmer</td><td>PC 4-48 (high-D residual)</td></tr>
-        <tr><td>opacity</td><td>mean cosine sim. to 8 NN (connectedness)</td></tr>
+        <tr><td>ellipsoid shape + tilt</td><td>local PCA of the 20-NN neighbourhood</td></tr>
+        <tr><td>base colour</td><td>character class (see legend)</td></tr>
+        <tr><td>opacity</td><td>mean cosine to 20 NN (connectedness)</td></tr>
       </table>
       <p style="margin:6px 0">
-        Explained variance — top 3: <b>${p3}</b> · top 12: <b>${p12}</b> · top 57: <b>${p57}</b>.
+        Explained variance — top 3: <b>${p3}</b> · top 12: <b>${p12}</b>.
       </p>
       ${paletteRows ? `
-      <div style="margin-top:10px;color:#94a3b8;font-weight:600">colour legend</div>
-      <table style="border-collapse:collapse;margin-top:4px;font-family:ui-monospace,monospace;font-size:12px">${paletteRows}</table>` : ""}
+      <div style="margin-top:10px;color:#94a3b8;font-weight:600">colour legend · click to toggle</div>
+      <div style="margin-top:4px">${paletteRows}</div>` : ""}
       <p style="margin:10px 0 0; color:#6b7280; font-size:11px">
         Model: GPT-2 small (OpenAI, Modified MIT). Renderer:
         <a href="https://sparkjs.dev/" style="color:#8be2f5" target="_blank" rel="noopener">Spark</a>.
@@ -64,6 +68,23 @@ export function mountAbout(
     </div>
   `;
   host.appendChild(wrap);
+
+  wrap.querySelectorAll<HTMLButtonElement>("button[data-cls]").forEach((btn) => {
+    const cls = Number(btn.dataset.cls);
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      if (disabled.has(cls)) disabled.delete(cls);
+      else disabled.add(cls);
+      const off = disabled.has(cls);
+      btn.style.background = off ? "rgba(255,255,255,0.03)" : "";
+      const swatch = btn.querySelector<HTMLSpanElement>("[data-swatch]")!;
+      const name = btn.querySelector<HTMLSpanElement>("[data-name]")!;
+      swatch.style.opacity = off ? "0.25" : "1";
+      name.style.textDecoration = off ? "line-through" : "";
+      name.style.color = off ? "#6b7280" : "#e8ecf1";
+      meta.onToggleClass?.(new Set(disabled));
+    });
+  });
 }
 
 function escapeHtml(s: string): string {

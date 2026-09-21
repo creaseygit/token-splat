@@ -46,7 +46,7 @@ export type TokensDoc = {
   band_gains?: number[];
   scene_scale?: number;
   char_class_palette?: CharClass[];
-  tokens: { s: string; sparse: boolean; freq?: number }[];
+  tokens: { s: string; sparse: boolean; freq?: number; cls?: number }[];
 };
 
 export type Neighbours = {

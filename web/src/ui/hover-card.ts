@@ -68,15 +68,23 @@ export function mountHoverCard(handle: SceneHandle, container: HTMLElement): (id
     lastId = id;
     if (id === null) { card.style.display = "none"; return; }
     const tok = handle.tokens.tokens[id]!;
-    const neigh = handle.neighboursOf(id).slice(0, 8);
+    // Only list visible neighbours; take up to 8 of those.
+    const neigh = handle.neighboursOf(id).filter((nid) => handle.isVisible(nid)).slice(0, 8);
     const rows = neigh.map((nid) => {
       const s = handle.tokens.tokens[nid]?.s ?? "?";
       return `<button data-id="${nid}" style="all:unset;cursor:pointer;color:#8be2f5;display:block;padding:2px 0">${escapeHtml(renderTokenText(s))}</button>`;
     }).join("");
     const flag = tok.sparse ? ' <span style="color:#f59e0b">sparse</span>' : "";
+    // Class chip: matches the swatch colour from the legend.
+    const cls = handle.classOf(id);
+    const palette = handle.tokens.char_class_palette ?? [];
+    const clsInfo = palette[cls];
+    const clsChip = clsInfo
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#141826;padding:1px 6px;border-radius:6px;font-size:11px;color:#94a3b8"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:rgb(${clsInfo.rgb[0]},${clsInfo.rgb[1]},${clsInfo.rgb[2]})"></span>${escapeHtml(clsInfo.name)}</span>`
+      : "";
     card.innerHTML = `
       <div style="font-size:13px;color:#fff;font-weight:600;margin-bottom:6px">${escapeHtml(renderTokenText(tok.s))}${flag}</div>
-      <div style="color:#6b7280;margin-bottom:6px">id ${id} · nearest 8</div>
+      <div style="color:#6b7280;margin-bottom:6px">id ${id} · ${clsChip} · nearest ${neigh.length}</div>
       <div>${rows}</div>
     `;
     card.querySelectorAll<HTMLButtonElement>("button[data-id]").forEach((btn) => {

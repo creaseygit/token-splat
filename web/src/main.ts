@@ -10,6 +10,7 @@ import { mountAbout } from "./ui/about";
 import { mountFocusLabel } from "./ui/focus-label";
 import { mountExplosion } from "./ui/explosion";
 import { mountRelations } from "./ui/relations";
+import { mountCull } from "./ui/cull";
 
 function hasWebGL2(): boolean {
   const c = document.createElement("canvas");
@@ -35,6 +36,7 @@ async function boot(): Promise<void> {
   mountFocusLabel(handle, document.body);
   mountExplosion(document.body, (f) => handle.setExplosion(f));
   mountRelations(document.body, handle);
+  mountCull(document.body, handle);
   mountAbout(document.body, {
     topThreeVar: handle.tokens.explained_variance_top3
       ? handle.tokens.explained_variance_top3.reduce((a, b) => a + b, 0)
@@ -42,6 +44,7 @@ async function boot(): Promise<void> {
     top12Var: handle.tokens.explained_variance_top12 ?? 0,
     top57Var: handle.tokens.explained_variance_top57 ?? 0,
     charClasses: handle.tokens.char_class_palette,
+    onToggleClass: (disabled) => handle.setDisabledClasses(disabled),
   });
   // Initial view is a zoom-to-fit of the whole cloud (camera default frames
   // the 99%-radius sphere). No pre-selection so the eye can take the whole

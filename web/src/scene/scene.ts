@@ -8,8 +8,8 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { PackedSplats, SparkRenderer, SplatMesh, utils as sparkUtils } from "@sparkjsdev/spark";
-import { loadNeighbours, loadSH, loadSplats, loadStatic, loadTokens, neighboursOf, type Neighbours, type SHBlocks, type Splats, type StaticData, type TokensDoc } from "../data/loader";
+import { PackedSplats, SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import { loadNeighbours, loadSplats, loadStatic, loadTokens, neighboursOf, type Neighbours, type Splats, type StaticData, type TokensDoc } from "../data/loader";
 import { makeMarker } from "./marker";
 
 export type SceneHooks = {
@@ -24,6 +24,10 @@ export type SceneHandle = {
   setExplosion: (factor: number) => void;
   setRelationsDepth: (depth: 1 | 2 | 3) => void;      // 1 = normal, 2..3 = transitive
   setIsolate: (on: boolean) => void;                   // fade the non-related splats
+  setCullFraction: (frac: number) => void;             // 0 = show all, 0.9 = hide bottom 90% by density
+  setDisabledClasses: (ids: Set<number>) => void;      // per-class visibility mask
+  classOf: (tokenId: number) => number;                // char class id for a splat
+  isVisible: (tokenId: number) => boolean;             // honours cull / isolate / class filters
   onFocusChange: (cb: (tokenId: number | null) => void) => void;
   neighboursOf: (tokenId: number) => number[];
   tokens: TokensDoc;
@@ -39,13 +43,12 @@ const HIT_RADIUS_PX = 12;
 export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<SceneHandle> {
   const tokens = await loadTokens("/assets/tokens.json");
   const n = tokens.vocab_size;
-  const [splats, staticData, neighbours, sh] = await Promise.all([
+  const [splats, staticData, neighbours] = await Promise.all([
     loadSplats("/assets/splats.bin", n),
     loadStatic("/assets/static.bin", n),
     loadNeighbours("/assets/neighbours.bin", n, NEIGH_K),
-    loadSH("/assets/sh_00.bin", n).catch(() => null),
   ]);
-  console.log(`[scene] loaded ${n.toLocaleString()} splats · encoding=${tokens.encoding ?? "n/a"} · SH=${sh ? "yes" : "no"}`);
+  console.log(`[scene] loaded ${n.toLocaleString()} splats · encoding=${tokens.encoding ?? "n/a"}`);
 
   // ---- renderer ---------------------------------------------------------
   const width = host.clientWidth || window.innerWidth;
@@ -83,33 +86,9 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     colV.setRGB(splats.rgb[i * 3]! / 255, splats.rgb[i * 3 + 1]! / 255, splats.rgb[i * 3 + 2]! / 255);
     packed.pushSplat(posV, sclV, quatV, staticData.opacity[i]! / 255, colV);
   }
-  // ---- SH bands 1..3 (view-dependent colour shimmer) --------------------
-  if (sh) {
-    packed.setMaxSh(3);
-    const sh1Arr = packed.ensureSplatsSh(1, n);
-    const sh2Arr = packed.ensureSplatsSh(2, n);
-    const sh3Arr = packed.ensureSplatsSh(3, n);
-    const enc1 = { sh1Max: sh.bandScales[0] };
-    const enc2 = { sh2Max: sh.bandScales[1] };
-    const enc3 = { sh3Max: sh.bandScales[2] };
-    const inv127 = 1 / 127;
-    const s1 = sh.bandScales[0] * inv127;
-    const s2 = sh.bandScales[1] * inv127;
-    const s3 = sh.bandScales[2] * inv127;
-    const buf1 = new Float32Array(9);
-    const buf2 = new Float32Array(15);
-    const buf3 = new Float32Array(21);
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < 9;  j++) buf1[j] = sh.band1[i * 9  + j]! * s1;
-      for (let j = 0; j < 15; j++) buf2[j] = sh.band2[i * 15 + j]! * s2;
-      for (let j = 0; j < 21; j++) buf3[j] = sh.band3[i * 21 + j]! * s3;
-      sparkUtils.encodeSh1Rgb(sh1Arr, i, buf1, enc1);
-      sparkUtils.encodeSh2Rgb(sh2Arr, i, buf2, enc2);
-      sparkUtils.encodeSh3Rgb(sh3Arr, i, buf3, enc3);
-    }
-    packed.needsUpdate = true;
-  }
-
+  // SH view-dependent shimmer removed: it confused the character-class
+  // colour coding (each splat's base RGB is meant to signal a class, but SH
+  // adds a view-angle-dependent tint on top). Base colour only from here.
   const mesh = new SplatMesh({ packedSplats: packed, editable: true, raycastable: false });
   scene.add(mesh);
 
@@ -215,22 +194,55 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
 
   let relationsDepth: 1 | 2 | 3 = 1;
   let isolateOn = false;
+  // Density-cull: slider value 0..1 = "cull fraction". 0 shows every splat;
+  // 0.9 hides the least-embedded 90%. Threshold derives from the opacity
+  // distribution (which encodes density) so the mapping is intuitive.
+  let cullFrac = 0.0;
+  let disabledClasses: Set<number> = new Set();
+  const sortedOpacities = new Uint8Array(staticData.opacity).sort();
+  // Per-splat class array (defaults to -1 for docs without a per-token cls field).
+  const classes = new Int16Array(n);
+  for (let i = 0; i < n; i++) classes[i] = (tokens.tokens[i]?.cls ?? -1) as number;
+  function opacityThresholdFor(frac: number): number {
+    const clamped = Math.max(0, Math.min(0.9999, frac));
+    const idx = Math.min(sortedOpacities.length - 1, Math.floor(clamped * sortedOpacities.length));
+    return sortedOpacities[idx]!;
+  }
 
-  // visibleSet is declared above rewritePositions; recompute logic below.
+  // visibleSet = intersection of the two active filters. null = show all.
   function recomputeVisibleSet(): void {
-    if (!isolateOn || focusId === null) { visibleSet = null; return; }
-    const set = new Set<number>([focusId]);
-    const d1 = neighboursOf(neighbours, focusId);
-    for (const id of d1) set.add(id);
-    if (relationsDepth >= 2) {
-      for (const a of d1) for (const b of neighboursOf(neighbours, a)) set.add(b);
+    let iso: Set<number> | null = null;
+    if (isolateOn && focusId !== null) {
+      iso = new Set<number>([focusId]);
+      const d1 = neighboursOf(neighbours, focusId);
+      for (const id of d1) iso.add(id);
+      if (relationsDepth >= 2) {
+        for (const a of d1) for (const b of neighboursOf(neighbours, a)) iso.add(b);
+      }
+      if (relationsDepth >= 3) {
+        const frontier: number[] = [];
+        for (const a of d1) for (const b of neighboursOf(neighbours, a)) frontier.push(b);
+        for (const a of frontier) for (const b of neighboursOf(neighbours, a)) iso.add(b);
+      }
     }
-    if (relationsDepth >= 3) {
-      // Expand another level from the depth-2 frontier.
-      const frontier: number[] = [];
-      for (const a of d1) for (const b of neighboursOf(neighbours, a)) frontier.push(b);
-      for (const a of frontier) for (const b of neighboursOf(neighbours, a)) set.add(b);
+    let cull: ((id: number) => boolean) | null = null;
+    if (cullFrac > 0) {
+      const thresh = opacityThresholdFor(cullFrac);
+      cull = (id) => staticData.opacity[id]! >= thresh;
     }
+    let classFilter: ((id: number) => boolean) | null = null;
+    if (disabledClasses.size > 0) {
+      classFilter = (id) => !disabledClasses.has(classes[id]!);
+    }
+    const anyFilter = iso || cull || classFilter;
+    if (!anyFilter) { visibleSet = null; return; }
+    const combined = (id: number): boolean =>
+      (iso ? iso.has(id) : true) &&
+      (cull ? cull(id) : true) &&
+      (classFilter ? classFilter(id) : true);
+    const set = new Set<number>();
+    const source = iso ?? { has: (_i: number) => true, [Symbol.iterator]: function* () { for (let i = 0; i < n; i++) yield i; } };
+    for (const i of source as Iterable<number>) if (combined(i)) set.add(i);
     visibleSet = set;
   }
 
@@ -249,17 +261,22 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
       lines1.obj.visible = false; lines2.obj.visible = false; lines3.obj.visible = false;
       return;
     }
+    // Only draw an edge when BOTH endpoints are currently visible — otherwise
+    // lines dangle out to invisible splats after culling / class-toggle /
+    // isolate. `iso` is the current combined visibility set.
+    const iso = visibleSet;
+    const shown = (x: number): boolean => !iso || iso.has(x);
     const visited = new Set<number>([id]);
     // Depth 1
     const d1 = neighboursOf(neighbours, id);
     let e1 = 0;
     for (const nid of d1) {
-      writeEdge(lines1.pos, e1++, id, nid);
+      if (shown(id) && shown(nid)) writeEdge(lines1.pos, e1++, id, nid);
       visited.add(nid);
     }
     lines1.geom.setDrawRange(0, e1 * 2);
     lines1.geom.attributes.position!.needsUpdate = true;
-    lines1.obj.visible = true;
+    lines1.obj.visible = e1 > 0;
 
     // Depth 2
     let e2 = 0;
@@ -272,7 +289,7 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
           if (d2Set.has(key)) continue;
           d2Set.add(key);
           if (e2 >= MAX_D2) break;
-          writeEdge(lines2.pos, e2++, a, b);
+          if (shown(a) && shown(b)) writeEdge(lines2.pos, e2++, a, b);
         }
         if (e2 >= MAX_D2) break;
       }
@@ -294,7 +311,7 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
           if (d3Set.has(key)) continue;
           d3Set.add(key);
           if (e3 >= MAX_D3) break;
-          writeEdge(lines3.pos, e3++, a, b);
+          if (shown(a) && shown(b)) writeEdge(lines3.pos, e3++, a, b);
         }
         if (e3 >= MAX_D3) break;
       }
@@ -338,7 +355,10 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     m.multiply(mesh.matrixWorld);
     let bestId = -1;
     let bestZ = Infinity;
+    // In isolate mode, invisible splats also shouldn't be pickable.
+    const iso = visibleSet;
     for (let i = 0; i < n; i++) {
+      if (iso && !iso.has(i)) continue;
       projected.set(curPos[i * 3]!, curPos[i * 3 + 1]!, curPos[i * 3 + 2]!);
       projected.applyMatrix4(m);
       if (projected.z < -1 || projected.z > 1) continue;
@@ -420,6 +440,12 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
   hooks.onReady();
 
   const focusListeners: ((id: number | null) => void)[] = [];
+  function afterFilterChange(): void {
+    if (focusId !== null) updateNeighbourLines(focusId);
+    // Re-notify listeners so UIs (focus label badge, hover card if reopened)
+    // can recompute counts against the new visible set.
+    for (const cb of focusListeners) cb(focusId);
+  }
   const publicHandle: SceneHandle = {
     tokens,
     neighbourK: NEIGH_K,
@@ -453,7 +479,22 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
       isolateOn = on;
       recomputeVisibleSet();
       rewritePositions();
+      afterFilterChange();
     },
+    setCullFraction(frac: number): void {
+      cullFrac = frac;
+      recomputeVisibleSet();
+      rewritePositions();
+      afterFilterChange();
+    },
+    setDisabledClasses(ids: Set<number>): void {
+      disabledClasses = ids;
+      recomputeVisibleSet();
+      rewritePositions();
+      afterFilterChange();
+    },
+    classOf(tokenId: number): number { return classes[tokenId]!; },
+    isVisible(tokenId: number): boolean { return !visibleSet || visibleSet.has(tokenId); },
     onFocusChange(cb) { focusListeners.push(cb); },
     neighboursOf(tokenId: number): number[] {
       return neighboursOf(neighbours, tokenId);
