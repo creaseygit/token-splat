@@ -1,0 +1,16 @@
+pipeline/.venv/
+pipeline/__pycache__/
+pipeline/**/__pycache__/
+pipeline/.pytest_cache/
+pipeline/cache/
+web/node_modules/
+web/dist/
+# Generated splat assets ARE committed so `npm install && npm run dev` works
+# on a clean clone without running the Python pipeline. Only exclude debug
+# artefacts and any live ONNX bundles.
+web/public/assets/debug*.ply
+web/public/assets/*.onnx
+.DS_Store
+.env
+.env.local
+*.pyc

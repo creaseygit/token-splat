@@ -1,0 +1,13 @@
+# Pin ranges; refresh on major model or ORT bumps.
+torch>=2.4,<3
+transformers>=4.44,<5
+tokenizers>=0.20,<0.22
+datasets>=3.0,<4
+numpy>=1.26,<3
+scikit-learn>=1.5,<2
+onnx>=1.17,<2
+onnxruntime>=1.19,<2
+onnxscript>=0.4,<1     # needed by torch 2.14 dynamo ONNX exporter
+pyyaml>=6.0,<7
+tqdm>=4.66,<5
+pytest>=8.3,<9

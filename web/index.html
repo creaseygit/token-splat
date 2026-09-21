@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Token Space Splat</title>
+    <meta name="description" content="An interactive 3D Gaussian-splat tour of GPT-2 small's internal token space." />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #0a0b10; color: #e8ecf1; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      #stage { position: fixed; inset: 0; }
+      #hud { position: fixed; top: 12px; left: 12px; padding: 8px 10px; background: rgba(10,11,16,0.6); border-radius: 8px; font-size: 12px; letter-spacing: 0.02em; }
+      #no-webgl { display: none; padding: 24px; }
+      .no-webgl2 #stage { display: none; }
+      .no-webgl2 #no-webgl { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="stage" aria-label="Token space viewer"></div>
+    <div id="hud">
+      <div id="phase">phase 0 · renderer gate</div>
+      <div id="stats"></div>
+    </div>
+    <noscript><p style="padding:24px">This site needs JavaScript.</p></noscript>
+    <div id="no-webgl">
+      <h1>WebGL2 not available</h1>
+      <p>This viewer needs a browser with WebGL2. Try a recent Chrome, Edge, Firefox, or Safari.</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
