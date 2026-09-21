@@ -22,7 +22,7 @@ export function mountCull(host: HTMLElement, handle: SceneHandle): void {
       style="font-family:ui-monospace,monospace;color:#8be2f5;min-width:210px;cursor:help" for="cull-r">
       most-embedded <span id="cull-num">100</span>% · <span id="cull-count">${V.toLocaleString()}</span>
     </label>
-    <input id="cull-r" type="range" min="0" max="99.99" step="0.01" value="0"
+    <input id="cull-r" type="range" min="0" max="99.999" step="0.001" value="0"
       style="flex:1;accent-color:#8be2f5" aria-label="density cull"/>
   `;
   host.appendChild(wrap);
@@ -32,7 +32,8 @@ export function mountCull(host: HTMLElement, handle: SceneHandle): void {
   const count = wrap.querySelector<HTMLSpanElement>("#cull-count")!;
   const fmt = (keep: number) =>
     keep >= 10 ? keep.toFixed(0) :
-    keep >= 1  ? keep.toFixed(1) : keep.toFixed(2);
+    keep >= 1  ? keep.toFixed(1) :
+    keep >= 0.1 ? keep.toFixed(2) : keep.toFixed(3);
   slider.addEventListener("input", () => {
     const cullPercent = parseFloat(slider.value);       // 0..99.99
     const keepPercent = 100 - cullPercent;

@@ -213,7 +213,7 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
   const classes = new Int16Array(n);
   for (let i = 0; i < n; i++) classes[i] = (tokens.tokens[i]?.cls ?? -1) as number;
   function opacityThresholdFor(frac: number): number {
-    const clamped = Math.max(0, Math.min(0.99999, frac));
+    const clamped = Math.max(0, Math.min(0.999999, frac));
     const idx = Math.min(sortedOpacities.length - 1, Math.floor(clamped * sortedOpacities.length));
     return sortedOpacities[idx]!;
   }
