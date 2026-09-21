@@ -11,6 +11,7 @@ import { mountFocusLabel } from "./ui/focus-label";
 import { mountExplosion } from "./ui/explosion";
 import { mountRelations } from "./ui/relations";
 import { mountCull } from "./ui/cull";
+import { mountAnisotropy } from "./ui/anisotropy";
 
 function hasWebGL2(): boolean {
   const c = document.createElement("canvas");
@@ -37,6 +38,7 @@ async function boot(): Promise<void> {
   mountExplosion(document.body, (f) => handle.setExplosion(f));
   mountRelations(document.body, handle);
   mountCull(document.body, handle);
+  mountAnisotropy(document.body, handle);
   // Default: only the three most-populated character classes are enabled.
   // The tail categories (punctuation, byte fragments, whitespace, non-ASCII)
   // are mostly noise for the overview and can be toggled back on from the

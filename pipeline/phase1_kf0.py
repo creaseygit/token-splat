@@ -241,32 +241,40 @@ def main() -> int:
 
     # Local-neighbourhood ellipsoid: PCA on each token's top-20 neighbours' 3-D
     # positions. Eigenvalues → scale (semi-axes), eigenvectors → rotation.
-    # With gamma=1 the axis ratio is the raw eigenvalue-std ratio — a
-    # strongly linear neighbourhood renders as an aggressive needle; a blob
-    # stays near-spherical. scale_base sets the "typical splat" visible size.
+    #
+    # Anisotropy amplification (two knobs stack):
+    #   1. `anisotropy_gamma > 1` squashes small axes harder — needles get
+    #      thinner. gamma=1.5 turns a 3:1 raw ratio into ~5:1 visible.
+    #   2. `stretch_max = 1 + stretch_gain * anisotropy` extends the *longest*
+    #      axis for anisotropic tokens, so needles stretch LONGER, not just
+    #      thinner. A perfect sphere stays scale_base; a near-degenerate needle
+    #      gets up to (1 + stretch_gain)× the length.
+    # Baseline ellipsoid: eigenvalues → axes, eigenvectors → rotation.
+    # The web-side anisotropy-amp slider exaggerates further at view time,
+    # so we keep the pipeline output honest (raw eigenvalue ratios).
     print(f"[enc] fitting local ellipsoids (k=20)…")
     K_LOCAL = 20
     scale_base = 0.030
     anisotropy_gamma = 1.0
     for i in range(V):
         ids_nn = neigh[i, :K_LOCAL].astype(np.int64)
-        pts = pos[ids_nn]                              # (K_LOCAL, 3)
+        pts = pos[ids_nn]
         centred = pts - pts.mean(axis=0, keepdims=True)
         cov = centred.T @ centred / max(K_LOCAL - 1, 1)
-        eigvals, eigvecs = np.linalg.eigh(cov)         # ascending
-        eigvals = eigvals[::-1]                        # descending
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        eigvals = eigvals[::-1]
         eigvecs = eigvecs[:, ::-1]
         if np.linalg.det(eigvecs) < 0:
             eigvecs[:, -1] *= -1
         std = np.sqrt(np.maximum(eigvals, 1e-12))
-        # Max-normalise, then power-law amplify.
         rmax = std[0] + 1e-12
         ratio = std / rmax
         scl[i] = scale_base * (ratio ** anisotropy_gamma)
-        quat[i] = R.from_matrix(eigvecs).as_quat()      # (x, y, z, w)
+        quat[i] = R.from_matrix(eigvecs).as_quat()
 
-    # Global rescale so the median MAX-axis is roughly scale_base — keeps the
-    # overall splat size stable while the anisotropy story is preserved.
+    # Rescale so the median max-axis is roughly scale_base — anisotropy story
+    # is preserved (relative ratios unchanged) but the overall visual scale
+    # doesn't blow up from the stretch.
     max_axis = scl.max(axis=1)
     med = float(np.median(max_axis))
     scl *= scale_base / (med + 1e-8)
