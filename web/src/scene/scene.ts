@@ -187,6 +187,9 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     const o = new THREE.LineSegments(g, m);
     o.renderOrder = 998;
     o.visible = false;
+    // Skip frustum culling — the bounding sphere is stale after every rewrite
+    // and depth 3 in particular spans a big volume that gets culled otherwise.
+    o.frustumCulled = false;
     return { geom: g, obj: o, pos };
   }
   const lines1 = makeLines(LINE_K);
