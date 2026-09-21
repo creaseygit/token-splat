@@ -26,7 +26,6 @@ export type SceneHandle = {
   setIsolate: (on: boolean) => void;                   // fade the non-related splats
   setCullFraction: (frac: number) => void;             // 0 = show all, 0.9 = hide bottom 90% by density
   setDisabledClasses: (ids: Set<number>) => void;      // per-class visibility mask
-  setAnisotropyAmp: (amp: number) => void;             // 1 = pipeline default, >1 = more extreme
   classOf: (tokenId: number) => number;                // char class id for a splat
   isVisible: (tokenId: number) => boolean;             // honours cull / isolate / class filters
   visibleCount: () => number;                          // actual number of visible splats
@@ -110,10 +109,10 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
   // Isolate-mode visibility set. Declared here (hoisted above rewritePositions)
   // so the initial rewritePositions call doesn't hit the temporal dead zone.
   let visibleSet: Set<number> | null = null;
-  // Anisotropy amp: 1 = raw shape from pipeline, higher = exaggerate. The
-  // transform preserves each splat's geometric-mean size, so needles get
-  // LONGER and THINNER (not smaller / bigger overall) as amp climbs.
-  let anisotropyAmp = 1.0;
+  // Fixed anisotropy amplification. Volume-preserving power on each splat's
+  // axis ratios: needles get LONGER and THINNER while spheres stay spherical.
+  // 2.0 tested as the sweet spot: shape is legible without going grotesque.
+  const ANISOTROPY_AMP = 2.0;
   const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _q = new THREE.Quaternion(), _c = new THREE.Color();
   function rewritePositions(): void {
     // Positions scale linearly with explosion. Splat sizes stay constant.
@@ -122,21 +121,18 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     // spheres). Isolate mode makes non-set splats invisible.
     const posS = explosion;
     const iso = visibleSet;
-    const amp = anisotropyAmp;
     for (let i = 0; i < n; i++) {
       curPos[i * 3    ] = splats.position[i * 3    ]! * posS;
       curPos[i * 3 + 1] = splats.position[i * 3 + 1]! * posS;
       curPos[i * 3 + 2] = splats.position[i * 3 + 2]! * posS;
       _p.set(curPos[i * 3]!, curPos[i * 3 + 1]!, curPos[i * 3 + 2]!);
+      // Volume-preserving anisotropy amp: ratio = axes / gmean; new = ratio^amp * gmean.
+      // product(ratio) == 1, so gmean is preserved.
       let sx = splats.scale[i * 3]!, sy = splats.scale[i * 3 + 1]!, sz = splats.scale[i * 3 + 2]!;
-      if (amp !== 1.0) {
-        // Volume-preserving power law: ratio = axes / gmean; new = ratio^amp * gmean.
-        // product(ratio) == 1, so gmean is preserved for any amp.
-        const gmean = Math.cbrt(sx * sy * sz) || 1e-9;
-        sx = Math.pow(sx / gmean, amp) * gmean;
-        sy = Math.pow(sy / gmean, amp) * gmean;
-        sz = Math.pow(sz / gmean, amp) * gmean;
-      }
+      const gmean = Math.cbrt(sx * sy * sz) || 1e-9;
+      sx = Math.pow(sx / gmean, ANISOTROPY_AMP) * gmean;
+      sy = Math.pow(sy / gmean, ANISOTROPY_AMP) * gmean;
+      sz = Math.pow(sz / gmean, ANISOTROPY_AMP) * gmean;
       _s.set(sx, sy, sz);
       _q.set(splats.quat[i * 4]!, splats.quat[i * 4 + 1]!, splats.quat[i * 4 + 2]!, splats.quat[i * 4 + 3]!);
       _c.setRGB(splats.rgb[i * 3]! / 255, splats.rgb[i * 3 + 1]! / 255, splats.rgb[i * 3 + 2]! / 255);
@@ -516,10 +512,6 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
       recomputeVisibleSet();
       rewritePositions();
       afterFilterChange();
-    },
-    setAnisotropyAmp(amp: number): void {
-      anisotropyAmp = Math.max(0.1, amp);
-      rewritePositions();
     },
     classOf(tokenId: number): number { return classes[tokenId]!; },
     isVisible(tokenId: number): boolean { return !visibleSet || visibleSet.has(tokenId); },
