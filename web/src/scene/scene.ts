@@ -28,6 +28,9 @@ export type SceneHandle = {
   setDisabledClasses: (ids: Set<number>) => void;      // per-class visibility mask
   classOf: (tokenId: number) => number;                // char class id for a splat
   isVisible: (tokenId: number) => boolean;             // honours cull / isolate / class filters
+  relationsDepth: () => 1 | 2 | 3;                     // current relations depth
+  onDepthChange: (cb: (depth: 1 | 2 | 3) => void) => void;
+  transitiveNeighboursOf: (tokenId: number, depth: 1 | 2 | 3) => number[];
   onFocusChange: (cb: (tokenId: number | null) => void) => void;
   neighboursOf: (tokenId: number) => number[];
   tokens: TokensDoc;
@@ -445,6 +448,7 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
   hooks.onReady();
 
   const focusListeners: ((id: number | null) => void)[] = [];
+  const depthListeners: ((d: 1 | 2 | 3) => void)[] = [];
   function afterFilterChange(): void {
     if (focusId !== null) updateNeighbourLines(focusId);
     // Re-notify listeners so UIs (focus label badge, hover card if reopened)
@@ -479,6 +483,9 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
       recomputeVisibleSet();
       if (isolateOn) rewritePositions();
       if (focusId !== null) updateNeighbourLines(focusId);
+      for (const cb of depthListeners) cb(depth);
+      // Fire focus listeners too — badge / list length depends on depth.
+      for (const cb of focusListeners) cb(focusId);
     },
     setIsolate(on: boolean): void {
       isolateOn = on;
@@ -500,6 +507,28 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     },
     classOf(tokenId: number): number { return classes[tokenId]!; },
     isVisible(tokenId: number): boolean { return !visibleSet || visibleSet.has(tokenId); },
+    relationsDepth(): 1 | 2 | 3 { return relationsDepth; },
+    onDepthChange(cb) { depthListeners.push(cb); },
+    transitiveNeighboursOf(tokenId: number, depth: 1 | 2 | 3): number[] {
+      // BFS out to `depth` hops. Returns the neighbours in discovery order,
+      // excluding the token itself. Callers filter by visibility.
+      const seen = new Set<number>([tokenId]);
+      const out: number[] = [];
+      let frontier: number[] = [tokenId];
+      for (let d = 0; d < depth; d++) {
+        const next: number[] = [];
+        for (const a of frontier) {
+          for (const b of neighboursOf(neighbours, a)) {
+            if (seen.has(b)) continue;
+            seen.add(b);
+            out.push(b);
+            next.push(b);
+          }
+        }
+        frontier = next;
+      }
+      return out;
+    },
     onFocusChange(cb) { focusListeners.push(cb); },
     neighboursOf(tokenId: number): number[] {
       return neighboursOf(neighbours, tokenId);
