@@ -28,6 +28,7 @@ export type SceneHandle = {
   setDisabledClasses: (ids: Set<number>) => void;      // per-class visibility mask
   classOf: (tokenId: number) => number;                // char class id for a splat
   isVisible: (tokenId: number) => boolean;             // honours cull / isolate / class filters
+  visibleCount: () => number;                          // actual number of visible splats
   relationsDepth: () => 1 | 2 | 3;                     // current relations depth
   onDepthChange: (cb: (depth: 1 | 2 | 3) => void) => void;
   transitiveNeighboursOf: (tokenId: number, depth: 1 | 2 | 3) => number[];
@@ -507,6 +508,7 @@ export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<
     },
     classOf(tokenId: number): number { return classes[tokenId]!; },
     isVisible(tokenId: number): boolean { return !visibleSet || visibleSet.has(tokenId); },
+    visibleCount(): number { return visibleSet ? visibleSet.size : n; },
     relationsDepth(): 1 | 2 | 3 { return relationsDepth; },
     onDepthChange(cb) { depthListeners.push(cb); },
     transitiveNeighboursOf(tokenId: number, depth: 1 | 2 | 3): number[] {

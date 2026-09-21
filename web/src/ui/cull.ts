@@ -37,7 +37,10 @@ export function mountCull(host: HTMLElement, handle: SceneHandle): void {
     const cullPercent = parseFloat(slider.value);       // 0..99.99
     const keepPercent = 100 - cullPercent;
     num.textContent = fmt(keepPercent);
-    count.textContent = Math.max(1, Math.round(V * keepPercent / 100)).toLocaleString();
     handle.setCullFraction(cullPercent / 100);
+    // Use the actual visible-set size — ties at max opacity (e.g. the glitch
+    // cluster where ~150 tokens all sit at density 0.998) mean the count
+    // can exceed the naive percentage estimate.
+    count.textContent = handle.visibleCount().toLocaleString();
   });
 }
