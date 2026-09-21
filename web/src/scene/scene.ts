@@ -41,12 +41,14 @@ const HOVER_NEIGH_K = 8;    // hover card shows first 8 of the stored 20
 const HIT_RADIUS_PX = 12;
 
 export async function buildScene(host: HTMLElement, hooks: SceneHooks): Promise<SceneHandle> {
-  const tokens = await loadTokens("/assets/tokens.json");
+  // BASE_URL is "/" in dev, "/token-splat/" on GitHub Pages — see vite.config.
+  const base = import.meta.env.BASE_URL;
+  const tokens = await loadTokens(`${base}assets/tokens.json`);
   const n = tokens.vocab_size;
   const [splats, staticData, neighbours] = await Promise.all([
-    loadSplats("/assets/splats.bin", n),
-    loadStatic("/assets/static.bin", n),
-    loadNeighbours("/assets/neighbours.bin", n, NEIGH_K),
+    loadSplats(`${base}assets/splats.bin`, n),
+    loadStatic(`${base}assets/static.bin`, n),
+    loadNeighbours(`${base}assets/neighbours.bin`, n, NEIGH_K),
   ]);
   console.log(`[scene] loaded ${n.toLocaleString()} splats · encoding=${tokens.encoding ?? "n/a"}`);
 
