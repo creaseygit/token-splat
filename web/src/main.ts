@@ -37,6 +37,14 @@ async function boot(): Promise<void> {
   mountExplosion(document.body, (f) => handle.setExplosion(f));
   mountRelations(document.body, handle);
   mountCull(document.body, handle);
+  // Default: only the three most-populated character classes are enabled.
+  // The tail categories (punctuation, byte fragments, whitespace, non-ASCII)
+  // are mostly noise for the overview and can be toggled back on from the
+  // About-panel legend.
+  const palette = handle.tokens.char_class_palette ?? [];
+  const topThreeIds = [...palette].sort((a, b) => b.count - a.count).slice(0, 3).map((c) => c.id);
+  const initialDisabled = new Set(palette.map((c) => c.id).filter((id) => !topThreeIds.includes(id)));
+  handle.setDisabledClasses(initialDisabled);
   mountAbout(document.body, {
     topThreeVar: handle.tokens.explained_variance_top3
       ? handle.tokens.explained_variance_top3.reduce((a, b) => a + b, 0)
@@ -44,6 +52,7 @@ async function boot(): Promise<void> {
     top12Var: handle.tokens.explained_variance_top12 ?? 0,
     top57Var: handle.tokens.explained_variance_top57 ?? 0,
     charClasses: handle.tokens.char_class_palette,
+    initialDisabled,
     onToggleClass: (disabled) => handle.setDisabledClasses(disabled),
   });
   // Initial view is a zoom-to-fit of the whole cloud (camera default frames

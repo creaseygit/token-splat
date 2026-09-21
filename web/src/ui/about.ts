@@ -10,6 +10,7 @@ export function mountAbout(
   meta: {
     topThreeVar: number; top12Var: number; top57Var: number;
     charClasses?: CharClass[];
+    initialDisabled?: Set<number>;
     onToggleClass?: (disabled: Set<number>) => void;
   },
 ): void {
@@ -29,7 +30,7 @@ export function mountAbout(
   const p12 = `${(meta.top12Var * 100).toFixed(1)}%`;
   const p57 = `${(meta.top57Var * 100).toFixed(1)}%`;
 
-  const disabled = new Set<number>();
+  const disabled = new Set<number>(meta.initialDisabled ?? []);
 
   const paletteRows = (meta.charClasses ?? []).map((c) => {
     const hex = `rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`;
@@ -69,19 +70,23 @@ export function mountAbout(
   `;
   host.appendChild(wrap);
 
+  function paint(btn: HTMLButtonElement, off: boolean): void {
+    btn.style.background = off ? "rgba(255,255,255,0.03)" : "";
+    const swatch = btn.querySelector<HTMLSpanElement>("[data-swatch]")!;
+    const name = btn.querySelector<HTMLSpanElement>("[data-name]")!;
+    swatch.style.opacity = off ? "0.25" : "1";
+    name.style.textDecoration = off ? "line-through" : "";
+    name.style.color = off ? "#6b7280" : "#e8ecf1";
+  }
   wrap.querySelectorAll<HTMLButtonElement>("button[data-cls]").forEach((btn) => {
     const cls = Number(btn.dataset.cls);
+    // Reflect the initial state — some classes may start disabled.
+    paint(btn, disabled.has(cls));
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       if (disabled.has(cls)) disabled.delete(cls);
       else disabled.add(cls);
-      const off = disabled.has(cls);
-      btn.style.background = off ? "rgba(255,255,255,0.03)" : "";
-      const swatch = btn.querySelector<HTMLSpanElement>("[data-swatch]")!;
-      const name = btn.querySelector<HTMLSpanElement>("[data-name]")!;
-      swatch.style.opacity = off ? "0.25" : "1";
-      name.style.textDecoration = off ? "line-through" : "";
-      name.style.color = off ? "#6b7280" : "#e8ecf1";
+      paint(btn, disabled.has(cls));
       meta.onToggleClass?.(new Set(disabled));
     });
   });
